@@ -1,0 +1,15 @@
+{
+  "name": "moon-saga",
+  "version": "1.0.0",
+  "description": "Minimalistic library for handling side effects with async operations in lua.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"RUNNING moon_saga TESTS\" | lua src/tests/all.lua -v",
+    "watch": "onchange 'src' -i -- npm run test"
+  },
+  "author": "Dimitar Mihaylov",
+  "license": "ISC",
+  "devDependencies": {
+    "onchange": "^4.0.0"
+  }
+}
