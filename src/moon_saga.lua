@@ -65,6 +65,7 @@ local flush_take_waiting_coroutines = function (action_id)
     end
 
     action_waiters[action_id] = { };
+    collectgarbage();
 
     return waiter_coroutines;
   end
@@ -86,28 +87,31 @@ local subscribe = function (action_id, moon_effect, coroutine)
 end
 
 local blocking_calls_waiter = function ()
-  coroutine.yield(
-    take_every('MOON_SAGA.ITERATOR_FINISHED', function (finished_iterator)
-      for
-        index, blocking_call
-      in pairs(
-        waiting_iterators_to_complete
-      ) do
-        if (blocking_call.finished == false) then
-          if (blocking_call.blocking_iterator == finished_iterator.iterator) then
-            waiting_iterators_to_complete[index].finished = true;
+  while (true) do
+    local finished_iterator = coroutine.yield(
+      take('MOON_SAGA.ITERATOR_FINISHED')
+    );
 
-            iterate(
-              blocking_call.iterator,
-              unpack(finished_iterator.results)
-            );
-          end
+    for
+      index, blocking_call
+    in pairs(
+      waiting_iterators_to_complete
+    ) do
+      if (blocking_call.finished == false) then
+        if (blocking_call.blocking_iterator == finished_iterator.iterator) then
+          waiting_iterators_to_complete[index].finished = true;
+
+          iterate(
+            blocking_call.iterator,
+            unpack(finished_iterator.results)
+          );
         end
       end
+    end
 
-      finished_iterator.iterator = nil;
-    end)
-  );
+    finished_iterator.iterator = nil;
+    collectgarbage();
+  end
 end
 
 -- Running proccesses logic --
@@ -219,11 +223,15 @@ local RESOLVE = function (data, iterator)
   data.resolver(
     function (...)
       iterate(iterator, true, ...);
+      data.resolver = nil;
+      collectgarbage();
     end, function (err)
       iterate(iterator, false, err);
+      data.resolver = nil;
+      collectgarbage();
     end,
     unpack(data.args)
-  )
+  );
 end
 
 -- Handling of iteration process
@@ -240,6 +248,7 @@ iterate = function(iterator, ...)
 
   if (cancelled) then
     running_proccess.coroutine = nil;
+    collectgarbage();
     return;
   end
 
