@@ -54,6 +54,13 @@ local resolve = function (resolver, ...)
   };
 end
 
+local race = function (effects)
+  return {
+    racing_effects = effects,
+    moon_effect = 'moon_saga.RACE'
+  };
+end
+
 -- Running blocking calls logic
 
 local flush_take_waiting_coroutines = function (action_id)
@@ -234,6 +241,43 @@ local RESOLVE = function (data, iterator)
   );
 end
 
+local RACE = function (data, iterator)
+  local results = {};
+  local race_id = get_next_proccess_index();
+  local race_complete_action = 'moon_saga.RACE_COMPLETE.'..race_id;
+
+  moon_saga(function ()
+    local completed = coroutine.yield(
+      take(race_complete_action)
+    );
+
+    results[completed.index] = completed.payload;
+
+    iterate(iterator, results);
+  end);
+
+  moon_saga(function ()
+    for index, effect
+    in pairs(data.racing_effects)
+    do
+      coroutine.yield(
+        fork(function ()
+          local result = { coroutine.yield(effect) };
+
+          coroutine.yield(
+            put(
+              race_complete_action, {
+                payload = result,
+                index = index
+              }
+            )
+          );
+        end)
+      )
+    end
+  end);
+end
+
 -- Handling of iteration process
 
 local collect_coroutine_results = function (...)
@@ -278,6 +322,8 @@ iterate = function(iterator, ...)
       return FORK(yielded_helper, proccess_id);
     elseif (yielded_helper.moon_effect == 'moon_saga.RESOLVE') then
       return RESOLVE(yielded_helper, iterator);
+    elseif (yielded_helper.moon_effect == 'moon_saga.RACE') then
+      return RACE(yielded_helper, iterator);
     end
   end
 
@@ -318,5 +364,6 @@ return {
   fork = fork,
   cancel = CANCEL,
   resolve = resolve,
+  race = race,
   moon_saga = moon_saga
 };
