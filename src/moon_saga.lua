@@ -39,10 +39,10 @@ local call = function (...)
   };
 end
 
-local fork = function (...)
+local spawn = function (...)
   return {
     args = {...},
-    moon_effect = 'moon_saga.FORK'
+    moon_effect = 'moon_saga.SPAWN'
   };
 end
 
@@ -99,8 +99,7 @@ local blocking_calls_waiter = function ()
       take('MOON_SAGA.ITERATOR_FINISHED')
     );
 
-    for
-      index, blocking_call
+    for index, blocking_call
     in pairs(
       waiting_iterators_to_complete
     ) do
@@ -129,21 +128,22 @@ local get_next_proccess_index = function()
   return proccess_index;
 end
 
-local running_forked_processes = { };
+local running_processes = { };
 
 local is_proccess_cancelled = function (iterator)
   for
-    proccess_id, running_forked_proccess
+    proccess_id,
+    running_proccess
   in pairs(
-    running_forked_processes
+    running_processes
   ) do
     local stopped = (
-      iterator == running_forked_proccess.coroutine and
-      running_forked_proccess.running == false
+      iterator == running_proccess.coroutine and
+      running_proccess.running == false
     );
 
     if (stopped) then
-      return true, running_forked_proccess;
+      return true, running_proccess;
     end
   end
 end
@@ -155,8 +155,7 @@ local DISPATCH = function (action_id, payload)
     print('Dispatched: ', action_id);
   end
 
-  for
-    index, waiter
+  for index, waiter
   in pairs(
     flush_take_waiting_coroutines(action_id)
   ) do
@@ -172,14 +171,14 @@ local TAKE = function (data, iterator)
   );
 end
 
-local FORK = function (data, proccess_id)
+local SPAWN = function (data, proccess_id)
   local args = {unpack(data.args)};
   local forked_coroutine = coroutine.create(
     -- pops the first arguement, which is the coroutine function
     table.remove(args, 1)
   );
 
-  running_forked_processes[proccess_id] = {
+  running_processes[proccess_id] = {
     coroutine = forked_coroutine,
     args = args,
     running = true
@@ -204,8 +203,8 @@ local TAKE_EVERY = function (data)
 end
 
 local CANCEL = function (proccess_id)
-  if (running_forked_processes[proccess_id]) then
-    running_forked_processes[proccess_id].running = false;
+  if (running_processes[proccess_id]) then
+    running_processes[proccess_id].running = false;
   end
 end
 
@@ -260,20 +259,20 @@ local RACE = function (data, iterator)
     for index, effect
     in pairs(data.racing_effects)
     do
-      coroutine.yield(
-        fork(function ()
-          local result = { coroutine.yield(effect) };
+      local spawned_effect = spawn(function ()
+        local result = { coroutine.yield(effect) };
 
-          coroutine.yield(
-            put(
-              race_complete_action, {
-                payload = result,
-                index = index
-              }
-            )
-          );
-        end)
-      )
+        coroutine.yield(
+          put(
+            race_complete_action, {
+              payload = result,
+              index = index
+            }
+          )
+        );
+      end);
+
+      coroutine.yield(spawned_effect);
     end
   end);
 end
@@ -306,8 +305,9 @@ iterate = function(iterator, ...)
   end
 
   local yielded_helper = coroutine_results[1];
+  local is_valid_helper_yielded = type(yielded_helper) == 'table' and yielded_helper.moon_effect ~= nil;
 
-  if (type(yielded_helper) == 'table' and yielded_helper.moon_effect ~= nil) then
+  if (is_valid_helper_yielded) then
     if (yielded_helper.moon_effect == 'moon_saga.PUT') then
       DISPATCH(yielded_helper.action_id, yielded_helper.payload);
     elseif (yielded_helper.moon_effect == 'moon_saga.TAKE') then
@@ -316,10 +316,10 @@ iterate = function(iterator, ...)
       TAKE_EVERY(yielded_helper);
     elseif (yielded_helper.moon_effect == 'moon_saga.CALL') then
       return CALL(yielded_helper, iterator);
-    elseif (yielded_helper.moon_effect == 'moon_saga.FORK') then
+    elseif (yielded_helper.moon_effect == 'moon_saga.SPAWN') then
       local proccess_id = get_next_proccess_index();
       iterate(iterator, proccess_id);
-      return FORK(yielded_helper, proccess_id);
+      return SPAWN(yielded_helper, proccess_id);
     elseif (yielded_helper.moon_effect == 'moon_saga.RESOLVE') then
       return RESOLVE(yielded_helper, iterator);
     elseif (yielded_helper.moon_effect == 'moon_saga.RACE') then
@@ -361,7 +361,7 @@ return {
   take = take,
   take_every = take_every,
   call = call,
-  fork = fork,
+  spawn = spawn,
   cancel = CANCEL,
   resolve = resolve,
   race = race,

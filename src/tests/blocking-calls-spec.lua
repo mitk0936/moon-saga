@@ -51,15 +51,13 @@ test('moon_saga.call | testing call return values', function(done)
             coroutine.yield(ms.take('END_OF_FIB_SEQUENCE'));
             
             test('moon_saga.take_every | effect is called every time with the right args', function ()
-              
-
               for k, v in pairs(insert.called) do
                 print(k, v);
                 for k1, v1 in pairs(v) do
                   local v33 = type(v1) == 'number' and v1 or unpack(v1);
                   print('   '..k1..'->'..v33);
+                  ok(eq(insert.called[k], {v}));
                 end
-                -- ok(eq(insert.called[k], {v}));
               end
 
               print('called', #insert.called);
@@ -91,7 +89,9 @@ test('moon_saga.take | testing take effect', function(done)
 
   ms.moon_saga(
     function ()
-      coroutine.yield(ms.take('BLOCKING_OPERATION_FINISHED'));
+      coroutine.yield(
+        ms.take('BLOCKING_OPERATION_FINISHED')
+      );
 
       ok(eq({ a, b, c }, { expected_a, expected_b, expected_c }));
       done();
@@ -111,7 +111,9 @@ test('moon_saga.take | testing take effect', function(done)
         )
       );
 
-      coroutine.yield(ms.put('BLOCKING_OPERATION_FINISHED'));
+      coroutine.yield(
+        ms.put('BLOCKING_OPERATION_FINISHED')
+      );
     end
   );
 end, true);
@@ -126,57 +128,57 @@ local stub_resolver = function (resolve, reject, a, b, c)
   end
 end
 
-ms.moon_saga(
-  function ()
-    test('moon_saga.resolve | is resolver returning values properly', function (done)
-      local result, a, b, c = coroutine.yield(
-        ms.resolve(stub_resolver, 5, 10, 20)
-      );
+test('moon_saga.resolve | is resolver returning values properly', function (done)
+  ms.moon_saga(function ()
+    local result, a, b, c = coroutine.yield(
+      ms.resolve(stub_resolver, 5, 10, 20)
+    );
 
-      ok(eq(result, true));
+    ok(eq(result, true));
 
-      if (result) then
-        ok(eq({ a, b, c }, { 20, 10, 5 }));
+    if (result) then
+      ok(eq({ a, b, c }, { 20, 10, 8 }));
+    end
+
+    done();
+  end)
+end, true);
+
+test('moon_saga.resolve | is resolve rejecting case properly, returning error', function (done)
+  ms.moon_saga(function ()
+    local result, data = coroutine.yield(
+      ms.resolve(stub_resolver, 1, 2, 3)
+    );
+
+    ok(eq(result, false));
+    ok(eq(data, mocked_error));
+
+    done();
+  end)
+end, true);
+
+test('moon_saga.race | is racing take and call effects properly', function (done)
+  ms.moon_saga(function ()
+    local blocking_call = function (number)
+      local num = number;
+
+      while (num > 500) do
+        num = num - 1;
       end
 
-      done();
-    end, true);
-  end,
-  function ()
-    test('moon_saga.resolve | is resolve rejecting case properly, returning error', function (done)
-      local result, data = coroutine.yield(
-        ms.resolve(stub_resolver, 1, 2, 3)
-      );
+      return num, num - 1, num - 2;
+    end
 
-      ok(eq(result, false));
-      ok(eq(data, mocked_error));
+    local result = coroutine.yield(
+      ms.race({
+        event = ms.take('UNKNOWN_EVENT'),
+        cancelled = ms.call(blocking_call, 1000)
+      })
+    );
 
-      done();
-    end, true);
-  end,
-  function ()
-    test('moon_saga.race | is racing take and call effects properly', function (done)
-      local blocking_call = function (number)
-        local num = number;
+    ok(eq(result.event, nil));
+    ok(eq(result.cancelled, { 500, 499, 498 }));
 
-        while (num > 500) do
-          num = num - 1;
-        end
-
-        return num, num - 1, num - 2;
-      end
-
-      local result = coroutine.yield(
-        ms.race({
-          event = ms.take('UNKNOWN_EVENT'),
-          cancelled = ms.call(blocking_call, 1000)
-        })
-      );
-
-      ok(eq(result.event, nil));
-      ok(eq(result.cancelled, { 500, 499, 498 }));
-
-      done();
-    end)
-  end
-);
+    done();
+  end)
+end)
