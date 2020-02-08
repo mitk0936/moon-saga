@@ -4,7 +4,7 @@
   "description": "Minimalistic library for handling side effects with async operations in lua.",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"RUNNING moon_saga TESTS\" | lua src/tests/all.lua -v",
+    "test": "echo \"RUNNING moon_saga TESTS\" | lua src/tests/setup.lua",
     "watch": "onchange 'src' -i -- npm run test"
   },
   "author": "Dimitar Mihaylov",
