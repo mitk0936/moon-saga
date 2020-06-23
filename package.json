@@ -5,7 +5,8 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"RUNNING moon_saga TESTS\" | lua src/tests/setup.lua",
-    "watch": "onchange 'src' -i -- npm run test"
+    "refactor": "echo \"RUNNING develop tests\" | lua src/develop.lua ",
+    "watch": "onchange 'src' -i -- npm run refactor"
   },
   "author": "Dimitar Mihaylov",
   "license": "ISC",
