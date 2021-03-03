@@ -2,6 +2,8 @@ local moduleName = ...
 local M = {}
 _G[moduleName] = M;
 
+-- TODO: race, takeLatest, takeEvery, all, channels, resolvers
+
 -- Effects Declarations --
 
 local put = function (action_id, payload)
@@ -50,6 +52,13 @@ local cancel = function (process_id)
   };
 end
 
+local race = function (...)
+  return {
+    racing_effects = {...},
+    moon_effect = 'moon_saga.RACE'
+  };
+end
+
 -- Lib utils --
 
 local uuid = function ()
@@ -81,6 +90,7 @@ local collect_coroutine_results = function (resumed, ...)
   local results = {...};
   return resumed, results;
 end
+
 
 -- Main lib functionality --
 
@@ -230,14 +240,47 @@ function M.create()
     saga.iterate(processes[parent_id], spawned_process.id);
   end
 
-  function saga.CANCEL(parent_id)
-    local waiting_for = processes[parent_id].waiting_for;
+  function saga.RACE(parent_id, yielded_effect)
+    local racing_effects = yielded_effect.racing_effects or {};
 
-    for i = #waiting_for, 1, -1 do
-      saga.CANCEL_PROCESS(waiting_for[i]);
-    end
+    saga.run(function ()
+      local raced_processes_forks = {};
+      local race_output = {};
 
-    processes[parent_id].waiting_for = {};
+      local cancel_all_raced_effects = function ()
+        for process_index = 1 , #raced_processes_forks, 1 do
+          saga.CANCEL_PROCESS(raced_processes_forks[process_index].forked_id);
+        end
+        
+        saga.iterate(parent_id, unpack(race_output))
+      end
+
+      for effect_index = 1 , #racing_effects, 1 do
+        local effect = racing_effects[effect_index];
+
+        -- validate the effect
+        if (not effect_index or type(effect) ~= 'table') then
+          error('Some of the effects you specified to RACE is not a valid effect.');
+          return;
+        end
+
+        raced_processes_forks[effect_index] = {};
+
+        -- fork, resolving the effect
+        coroutine.yield(
+          fork(function(process_id)
+            raced_processes_forks[effect_index] = {
+              forked_id = process_id
+            };
+
+            local result = { coroutine.yield(effect) };
+            -- setting only the finished effect result, others are nil
+            race_output[effect_index] = result;
+            cancel_all_raced_effects();
+          end)
+        );
+      end
+    end);
   end
 
   function saga.iterate(process, ...)
@@ -273,7 +316,9 @@ function M.create()
       elseif (yielded_effect.moon_effect == 'moon_saga.SPAWN') then
         return saga.SPAWN(yielded_effect, process.id);
       elseif (yielded_effect.moon_effect == 'moon_saga.CANCEL') then
-        saga.CANCEL(process.id);
+        saga.CANCEL_PROCESS(yielded_effect.process_id);
+      elseif (yielded_effect.moon_effect == 'moon_saga.RACE') then
+        return saga.RACE(process.id, yielded_effect);
       end
     end
 
@@ -306,7 +351,8 @@ function M.create()
     call = call,
     fork = fork,
     spawn = spawn,
-    cancel = cancel
+    cancel = cancel,
+    race = race
   };
 end
 
